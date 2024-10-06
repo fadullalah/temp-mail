@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Temp Mail Manager</title>
+    <style>
+        /* Body Styling */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #58a6ff;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: #161b22;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+        .email-list, .inbox {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .email-list li, .inbox-message {
+            background: #21262d;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.3s;
+        }
+        .email-list li:hover, .inbox-message:hover {
+            background: #30363d;
+        }
+        .email-list li span, .inbox-message {
+            word-break: break-all;
+        }
+        .btn {
+            padding: 8px 14px;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            color: #ffffff;
+            transition: all 0.3s ease-in-out;
+        }
+        .btn-create {
+            background: #238636;
+            margin-bottom: 15px;
+        }
+        .btn-create:hover {
+            background: #2ea043;
+        }
+        .btn-delete {
+            background: #da3633;
+        }
+        .btn-delete:hover {
+            background: #f85149;
+        }
+        .btn-inbox {
+            background: #1f6feb;
+        }
+        .btn-inbox:hover {
+            background: #388bfd;
+        }
+        .inbox {
+            margin-top: 20px;
+            border-top: 1px solid #30363d;
+            padding-top: 20px;
+        }
+        .inbox-message {
+            background: #161b22;
+            padding: 15px;
+            border: 1px solid #30363d;
+        }
+        .message-content {
+            margin-top: 5px;
+            padding: 10px;
+            background: #0d1117;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+        }
+        .header, .footer {
+            text-align: center;
+            padding: 10px;
+            background-color: #161b22;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            color: #8b949e;
+        }
+        .footer {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Modern Temp Mail Manager</h1>
+    <div class="container">
+        <div class="header">
+            <p>Create, Manage, and View Temp Emails with Style!</p>
+        </div>
+        <button class="btn btn-create">Create New Temp Mail</button>
+        <ul class="email-list">
+            <!-- Email accounts will be listed here -->
+        </ul>
+        <div class="inbox">
+            <h3>Inbox Messages</h3>
+            <div id="inbox-messages">
+                <!-- Inbox messages will be shown here -->
+            </div>
+        </div>
+        <div class="footer">
+            <p>Built with 💖 using the Mail.tm API</p>
+        </div>
+    </div>
+
+    <script>
+        const apiBase = 'https://api.mail.tm';
+        const storedEmailsKey = 'temp_emails';
+        const emailListElement = document.querySelector('.email-list');
+        const inboxMessagesElement = document.getElementById('inbox-messages');
+
+        // Initialize stored emails
+        let tempEmails = JSON.parse(localStorage.getItem(storedEmailsKey)) || [];
+
+        // Fetch and list available domains
+        async function getDomains() {
+            try {
+                const response = await fetch(`${apiBase}/domains`);
+                const data = await response.json();
+                if (data['hydra:member'] && data['hydra:member'].length > 0) {
+                    return data['hydra:member'][0].domain;
+                } else {
+                    throw new Error('No available domains');
+                }
+            } catch (err) {
+                console.error('Failed to fetch domains:', err);
+            }
+        }
+
+        // Create new email account
+        async function createTempEmail() {
+            const username = Math.random().toString(36).substring(7);
+            const domain = await getDomains();
+            if (!domain) return;
+
+            const email = username + '@' + domain;
+            const password = Math.random().toString(36).substring(7);
+
+            try {
+                const response = await fetch(`${apiBase}/accounts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address: email, password })
+                });
+
+                if (response.ok) {
+                    const newEmail = { email, password };
+                    tempEmails.push(newEmail);
+                    localStorage.setItem(storedEmailsKey, JSON.stringify(tempEmails));
+                    displayEmails();
+                } else {
+                    const errorData = await response.json();
+                    console.error('Error creating email:', errorData);
+                    alert('Failed to create a new email. Please try again.');
+                }
+            } catch (err) {
+                console.error('Request failed:', err);
+            }
+        }
+
+        // Authenticate and get the token for an email account
+        async function authenticate(email, password) {
+            try {
+                const response = await fetch(`${apiBase}/token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address: email, password })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.token;
+                } else {
+                    const errorData = await response.json();
+                    console.error('Error authenticating email:', errorData);
+                    alert('Authentication failed. Please try again.');
+                }
+            } catch (err) {
+                console.error('Request failed:', err);
+            }
+        }
+
+        // Fetch and display inbox messages for a given email
+        async function getInboxMessages(email, password) {
+            const token = await authenticate(email, password);
+            if (!token) return;
+
+            try {
+                const response = await fetch(`${apiBase}/messages`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    displayInboxMessages(data['hydra:member'], email);
+                } else {
+                    console.error('Failed to fetch inbox messages');
+                }
+            } catch (err) {
+                console.error('Request failed:', err);
+            }
+        }
+
+        // Display the list of stored emails
+        function displayEmails() {
+            emailListElement.innerHTML = '';
+            tempEmails.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <span>${item.email}</span>
+                    <button class="btn btn-inbox" onclick="getInboxMessages('${item.email}', '${item.password}')">Show Inbox</button>
+                    <button class="btn btn-delete" onclick="deleteEmail(${index})">Delete</button>
+                `;
+                emailListElement.appendChild(li);
+            });
+        }
+
+        // Display inbox messages for the selected email
+        function displayInboxMessages(messages, email) {
+            inboxMessagesElement.innerHTML = `<h4>Inbox for ${email}</h4>`;
+            messages.forEach(msg => {
+                const div = document.createElement('div');
+                div.className = 'inbox-message';
+                div.innerHTML = `
+                    <strong>From:</strong> ${msg.from?.address || 'Unknown'} <br>
+                    <strong>Subject:</strong> ${msg.subject || 'No Subject'} <br>
+                    <div class="message-content">${msg.intro}</div>
+                `;
+                inboxMessagesElement.appendChild(div);
+            });
+        }
+
+        // Delete an email from storage
+        function deleteEmail(index) {
+            tempEmails.splice(index, 1);
+            localStorage.setItem(storedEmailsKey, JSON.stringify(tempEmails));
+            displayEmails();
+            inboxMessagesElement.innerHTML = '';
+        }
+
+        // Automatically create a new email on page load
+        async function initializeApp() {
+            await createTempEmail();
+            displayEmails();
+        }
+
+        // Attach event listeners
+        document.querySelector('.btn-create').addEventListener('click', createTempEmail);
+
+        // Display stored emails on load
+        initializeApp();
+    </script>
+</body>
+</html>
